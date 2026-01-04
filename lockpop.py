@@ -20,6 +20,7 @@ def main():
     parser.add_argument("-d", "--database", type=ascii, required=True, help="Path to the KeePass .kdbx file")
     parser.add_argument("-w", "--wordlist", type=ascii, required=True, help="Text file with passwords to try, one per line")
     parser.add_argument("-k", "--keyfile", type=ascii, action='append', required=False, help="Optional keyfile(s) to use if the database requires it. Can be specified multiple times to try multiple keyfiles.")
+    parser.add_argument("-nk", "--no-key", action="store_true", help="When used with -k/--keyfile, also test passwords without any keyfile")
     parser.add_argument("-o", "--output", action="store_true", help="If the database is unlocked, show all stored entries")
     parser.add_argument("-f", "--outfile", type=str, help="Save dumped entries to a text file")
     parser.add_argument("-t", "--threads", type=int, default=os.cpu_count(), help="Number of parallel processes to use (default: all CPU cores)")
@@ -27,8 +28,16 @@ def main():
 
     db_file = args.database.replace("'", "")
     wordlist_file = args.wordlist.replace("'", "")
-    # If keyfiles are specified, try them AND also try without keyfiles (None)
-    keyfile_paths = [None] + [kf.replace("'", "") for kf in args.keyfile] if args.keyfile else [None]
+    # Build keyfile list: 
+    # - If no keyfiles specified: try without keyfile
+    # - If keyfiles specified with --no-key: try without keyfile AND with each keyfile
+    # - If keyfiles specified without --no-key: try only with keyfiles
+    if args.keyfile:
+        keyfile_paths = [kf.replace("'", "") for kf in args.keyfile]
+        if args.no_key:
+            keyfile_paths = [None] + keyfile_paths
+    else:
+        keyfile_paths = [None]
     output_entries = args.output
     output_file = args.outfile
     num_threads = args.threads

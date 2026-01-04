@@ -25,7 +25,8 @@ Required:
 - -w, --wordlist — Path to a file with passwords (one per line)
 
 Optional:
-- -k, --keyfile — Keyfile path if the database requires one. Can be specified multiple times to try multiple keyfiles (e.g., -k key1.key -k key2.key). When keyfiles are specified, lockpop will also test passwords without any keyfile.
+- -k, --keyfile — Keyfile path if the database requires one. Can be specified multiple times to try multiple keyfiles (e.g., -k key1.key -k key2.key)
+- -nk, --no-key — When used with -k/--keyfile, also test passwords without any keyfile
 - -o, --output — If the vault is cracked, print all entries
 - -f, --outfile — Write dumped entries to a file instead of stdout
 - -t, --threads — Number of processes to run in parallel (default = all cores)
@@ -44,6 +45,16 @@ This will:
 # Example with Multiple Keyfiles
 ```bash
 python lockpop.py -d myvault.kdbx -w rockyou.txt -k key1.key -k key2.key -k key3.key -t 4
+```
+This will:
+- Attempt to unlock myvault.kdbx
+- Use rockyou.txt as the password list
+- Try each password with key1.key, key2.key, and key3.key (not without keyfile)
+- Use 4 CPU cores to speed things up
+
+# Example with Multiple Keyfiles and No-Key Option
+```bash
+python lockpop.py -d myvault.kdbx -w rockyou.txt -k key1.key -k key2.key -k key3.key -nk -t 4
 ```
 This will:
 - Attempt to unlock myvault.kdbx
