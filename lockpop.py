@@ -32,7 +32,7 @@ def main():
 
     # Warn if --no-key is used without --keyfile
     if args.no_key and not args.keyfile:
-        print("Warning: --no-key flag has no effect without --keyfile. Ignoring.\n", file=sys.stderr)
+        print("Warning: --no-key flag has no effect without --keyfile. Ignoring.", file=sys.stderr)
 
     # Build keyfile list:
     # - If no keyfiles specified: try without keyfile
