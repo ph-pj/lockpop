@@ -28,6 +28,11 @@ def main():
 
     db_file = args.database.replace("'", "")
     wordlist_file = args.wordlist.replace("'", "")
+    
+    # Warn if --no-key is used without --keyfile
+    if args.no_key and not args.keyfile:
+        print("Warning: --no-key flag has no effect without --keyfile. Ignoring.\n")
+    
     # Build keyfile list: 
     # - If no keyfiles specified: try without keyfile
     # - If keyfiles specified with --no-key: try without keyfile AND with each keyfile
