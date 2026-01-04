@@ -35,8 +35,8 @@ def main():
     print("Starting lockpop...")
     print(f"Database file : {db_file}")
     print(f"Wordlist      : {wordlist_file}")
-    if keyfile_paths and keyfile_paths[0] is not None:
-        print(f"Keyfile(s)    : {', '.join(keyfile_paths)}")
+    if keyfile_paths and any(kf is not None for kf in keyfile_paths):
+        print(f"Keyfile(s)    : {', '.join(kf for kf in keyfile_paths if kf is not None)}")
     if output_file:
         print(f"Output file   : {output_file}")
 
