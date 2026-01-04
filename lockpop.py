@@ -27,7 +27,8 @@ def main():
 
     db_file = args.database.replace("'", "")
     wordlist_file = args.wordlist.replace("'", "")
-    keyfile_paths = [kf.replace("'", "") for kf in args.keyfile] if args.keyfile else [None]
+    # If keyfiles are specified, try them AND also try without keyfiles (None)
+    keyfile_paths = [None] + [kf.replace("'", "") for kf in args.keyfile] if args.keyfile else [None]
     output_entries = args.output
     output_file = args.outfile
     num_threads = args.threads
