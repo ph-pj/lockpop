@@ -3,6 +3,7 @@ lockpop is a simple, multi-process brute-force tool for cracking KeePass .kdbx d
 
 # Features
 - Brute-forces password-only or password+keyfile protected KeePass databases
+- Supports testing multiple keyfiles in parallel with passwords
 - Uses multiprocessing for fast parallel cracking
 - Auto-adjusts thread count to available CPU cores
 - Optional entry dump on successful unlock
@@ -24,7 +25,7 @@ Required:
 - -w, --wordlist — Path to a file with passwords (one per line)
 
 Optional:
-- -k, --keyfile — Keyfile path if the database requires one
+- -k, --keyfile — Keyfile path if the database requires one. Can be specified multiple times to try multiple keyfiles (e.g., -k key1.key -k key2.key)
 - -o, --output — If the vault is cracked, print all entries
 - -f, --outfile — Write dumped entries to a file instead of stdout
 - -t, --threads — Number of processes to run in parallel (default = all cores)
@@ -38,4 +39,14 @@ This will:
 - Use rockyou.txt as the password list
 - Provide my.key as a keyfile
 - Dump the unlocked entries into cracked.txt
+- Use 4 CPU cores to speed things up
+
+# Example with Multiple Keyfiles
+```bash
+python lockpop.py -d myvault.kdbx -w rockyou.txt -k key1.key -k key2.key -k key3.key -t 4
+```
+This will:
+- Attempt to unlock myvault.kdbx
+- Use rockyou.txt as the password list
+- Try each password with key1.key, key2.key, and key3.key
 - Use 4 CPU cores to speed things up

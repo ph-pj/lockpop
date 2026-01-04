@@ -9,7 +9,7 @@ def try_password(args):
     password = password.strip()
     try:
         PyKeePass(database_path, password=password, keyfile=keyfile_path)
-        return password
+        return (password, keyfile_path)
     except Exception:
         return None
 
@@ -19,7 +19,7 @@ def main():
     )
     parser.add_argument("-d", "--database", type=ascii, required=True, help="Path to the KeePass .kdbx file")
     parser.add_argument("-w", "--wordlist", type=ascii, required=True, help="Text file with passwords to try, one per line")
-    parser.add_argument("-k", "--keyfile", type=ascii, required=False, help="Optional keyfile to use if the database requires it")
+    parser.add_argument("-k", "--keyfile", type=ascii, action='append', required=False, help="Optional keyfile(s) to use if the database requires it. Can be specified multiple times to try multiple keyfiles.")
     parser.add_argument("-o", "--output", action="store_true", help="If the database is unlocked, show all stored entries")
     parser.add_argument("-f", "--outfile", type=str, help="Save dumped entries to a text file")
     parser.add_argument("-t", "--threads", type=int, default=os.cpu_count(), help="Number of parallel processes to use (default: all CPU cores)")
@@ -27,7 +27,7 @@ def main():
 
     db_file = args.database.replace("'", "")
     wordlist_file = args.wordlist.replace("'", "")
-    keyfile_path = args.keyfile.replace("'", "") if args.keyfile else None
+    keyfile_paths = [kf.replace("'", "") for kf in args.keyfile] if args.keyfile else [None]
     output_entries = args.output
     output_file = args.outfile
     num_threads = args.threads
@@ -35,8 +35,8 @@ def main():
     print("Starting lockpop...")
     print(f"Database file : {db_file}")
     print(f"Wordlist      : {wordlist_file}")
-    if keyfile_path:
-        print(f"Keyfile       : {keyfile_path}")
+    if keyfile_paths and keyfile_paths[0] is not None:
+        print(f"Keyfile(s)    : {', '.join(keyfile_paths)}")
     if output_file:
         print(f"Output file   : {output_file}")
 
@@ -57,9 +57,10 @@ def main():
         print(f"Wordlist not found: {wordlist_file}")
         return
 
-    task_args = [(i, pw, db_file, keyfile_path) for i, pw in enumerate(passwords)]
+    task_args = [(i, pw, db_file, kf) for i, pw in enumerate(passwords) for kf in keyfile_paths]
 
     found_password = None
+    found_keyfile = None
     tried = 0
     start_time = time.time()
 
@@ -67,7 +68,7 @@ def main():
         for result in pool.imap_unordered(try_password, task_args):
             tried += 1
             if result:
-                found_password = result
+                found_password, found_keyfile = result
                 pool.terminate()
                 break
 
@@ -80,8 +81,10 @@ def main():
 
     if found_password:
         print(f"Password found: {found_password}")
+        if found_keyfile:
+            print(f"Keyfile used  : {found_keyfile}")
         try:
-            kp = PyKeePass(db_file, password=found_password, keyfile=keyfile_path)
+            kp = PyKeePass(db_file, password=found_password, keyfile=found_keyfile)
             if output_entries or output_file:
                 output_lines = []
                 for entry in kp.entries:
