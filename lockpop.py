@@ -5,6 +5,7 @@ import time
 import os
 import subprocess
 import hashlib
+import tempfile
 
 def get_yubikey_response(challenge, slot=2):
     """
@@ -25,7 +26,7 @@ def get_yubikey_response(challenge, slot=2):
         challenge_hex = challenge.hex()
         
         # Call ykman to get challenge-response
-        # ykman otp chalresp --totp <slot> <challenge-hex>
+        # ykman otp chalresp <slot> <challenge-hex>
         result = subprocess.run(
             ['ykman', 'otp', 'chalresp', str(slot), challenge_hex],
             capture_output=True,
@@ -52,7 +53,7 @@ def get_yubikey_response(challenge, slot=2):
         raise RuntimeError("YubiKey operation timed out. Please ensure YubiKey is connected.")
 
 
-def create_yubikey_keyfile(database_path, slot, output_path='/tmp/yubikey_response.key'):
+def create_yubikey_keyfile(database_path, slot):
     """
     Create a keyfile from YubiKey challenge-response.
     
@@ -64,7 +65,6 @@ def create_yubikey_keyfile(database_path, slot, output_path='/tmp/yubikey_respon
     Args:
         database_path: str - Path to the KDBX database
         slot: int - YubiKey slot number (1 or 2)
-        output_path: str - Where to save the keyfile
     
     Returns:
         str - Path to the created keyfile
@@ -99,8 +99,14 @@ def create_yubikey_keyfile(database_path, slot, output_path='/tmp/yubikey_respon
     # Pad to 32 bytes if needed
     keyfile_data = hashlib.sha256(response).digest()
     
-    with open(output_path, 'wb') as f:
-        f.write(keyfile_data)
+    # Create a secure temporary file
+    fd, output_path = tempfile.mkstemp(prefix='yubikey_', suffix='.key')
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(keyfile_data)
+    except:
+        os.close(fd)
+        raise
     
     return output_path
 
@@ -255,7 +261,7 @@ def main():
     if yubikey_keyfile and os.path.exists(yubikey_keyfile):
         try:
             os.remove(yubikey_keyfile)
-        except:
+        except (OSError, FileNotFoundError):
             pass
 
 if __name__ == "__main__":
