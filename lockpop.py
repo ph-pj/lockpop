@@ -51,8 +51,12 @@ def try_password(args):
             # Use lock to ensure only one process accesses YubiKey at a time
             global yubikey_lock
             with yubikey_lock:
+                cmd = ['keepassxc-cli', 'ls', '--yubikey', yubikey_slot]
+                if keyfile_path:
+                    cmd.extend(['--key-file', keyfile_path])
+                cmd.extend([database_path, '/'])
                 result = subprocess.run(
-                    ['keepassxc-cli', 'ls', '--yubikey', yubikey_slot, database_path, '/'],
+                    cmd,
                     input=password + '\n',
                     capture_output=True,
                     text=True,
@@ -60,11 +64,11 @@ def try_password(args):
                 )
             # Success if returncode is 0 and no error message
             if result.returncode == 0 and 'Erro' not in result.stdout and 'Error' not in result.stdout:
-                return (password, f"YubiKey {yubikey_slot}")
+                return (password, keyfile_path, yubikey_slot)
             return None
         else:
             PyKeePass(database_path, password=password, keyfile=keyfile_path)
-            return (password, keyfile_path)
+            return (password, keyfile_path, None)
     except Exception:
         return None
 
@@ -75,6 +79,7 @@ def main():
     parser.add_argument("-d", "--database", type=ascii, required=True, help="Path to the KeePass .kdbx file")
     parser.add_argument("-w", "--wordlist", type=ascii, required=True, help="Text file with passwords to try, one per line")
     parser.add_argument("-k", "--keyfile", type=ascii, action='append', required=False, help="Optional keyfile(s) to use if the database requires it. Can be specified multiple times to try multiple keyfiles.")
+    parser.add_argument("-nk", "--no-key", action="store_true", help="When used with -k/--keyfile, also test passwords without any keyfile")
     parser.add_argument("-y", "--yubikey-slot", type=int, nargs='+', choices=[0, 1, 2], required=False, help="YubiKey slot(s) for challenge-response (0=no hardware key, 1=slot 1, 2=slot 2). Can specify multiple: -y 0 1 2. Use 0 to test without YubiKey.")
     parser.add_argument("-ny", "--no-hardware-key", action="store_true", help="Also test without hardware key (equivalent to adding 0 to -y)")
     parser.add_argument("-o", "--output", action="store_true", help="If the database is unlocked, show all stored entries")
@@ -84,7 +89,22 @@ def main():
 
     db_file = args.database.replace("'", "")
     wordlist_file = args.wordlist.replace("'", "")
-    keyfile_paths = [kf.replace("'", "") for kf in args.keyfile] if args.keyfile else [None]
+    
+    # Warn if --no-key is used without --keyfile
+    if args.no_key and not args.keyfile:
+        print("Warning: --no-key flag has no effect without --keyfile. Ignoring.")
+    
+    # Build keyfile list:
+    # - If no keyfiles specified: try without keyfile
+    # - If keyfiles specified with --no-key: try without keyfile AND with each keyfile
+    # - If keyfiles specified without --no-key: try only with keyfiles
+    if args.keyfile:
+        keyfile_paths = [kf.replace("'", "") for kf in args.keyfile]
+        if args.no_key:
+            keyfile_paths = [None] + keyfile_paths
+    else:
+        keyfile_paths = [None]
+    
     yubikey_slots = args.yubikey_slot if args.yubikey_slot else []
     no_hardware_key = args.no_hardware_key
     output_entries = args.output
@@ -169,10 +189,9 @@ def main():
                     # Test with hardware key - find the corresponding spec
                     spec = next((s for s in yubikey_specs if s.startswith(f"{slot_value}:")), None)
                     if spec:
-                        # With YubiKey, keyfile is handled differently
-                        # For now, test YubiKey separately from keyfiles
-                        # TODO: Support combining keyfile + YubiKey if needed
-                        task_args.append((i, pw, db_file, None, spec))
+                        # Test with YubiKey + each keyfile combination
+                        for kf in keyfile_paths:
+                            task_args.append((i, pw, db_file, kf, spec))
     else:
         # No YubiKey specified - normal mode with keyfiles only
         task_args = [(i, pw, db_file, kf, None) for i, pw in enumerate(passwords) for kf in keyfile_paths]
@@ -183,22 +202,32 @@ def main():
     print(f"  ({len(passwords)} passwords × {total_attempts // len(passwords)} configurations)\n")
 
     # Create a lock for YubiKey access if needed
-    manager = Manager()
-    lock = manager.Lock() if hardware_slots else None
+    manager = Manager() if hardware_slots else None
+    lock = manager.Lock() if manager else None
 
     found_password = None
     found_keyfile = None
+    found_yubikey = None
     tried = 0
     start_time = time.time()
 
-    # Initialize pool with lock for YubiKey synchronization
-    with Pool(processes=num_threads, initializer=init_worker, initargs=(lock,) if lock else ()) as pool:
-        for result in pool.imap_unordered(try_password, task_args):
-            tried += 1
-            if result:
-                found_password, found_keyfile = result
-                pool.terminate()
-                break
+    # Initialize pool with or without lock depending on YubiKey usage
+    if lock:
+        with Pool(processes=num_threads, initializer=init_worker, initargs=(lock,)) as pool:
+            for result in pool.imap_unordered(try_password, task_args):
+                tried += 1
+                if result:
+                    found_password, found_keyfile, found_yubikey = result
+                    pool.terminate()
+                    break
+    else:
+        with Pool(processes=num_threads) as pool:
+            for result in pool.imap_unordered(try_password, task_args):
+                tried += 1
+                if result:
+                    found_password, found_keyfile, found_yubikey = result
+                    pool.terminate()
+                    break
 
     end_time = time.time()
     duration = end_time - start_time
@@ -210,21 +239,22 @@ def main():
     if found_password:
         print(f"Password found: {found_password}")
         if found_keyfile:
-            print(f"Keyfile/Key   : {found_keyfile}")
+            print(f"Keyfile       : {found_keyfile}")
+        if found_yubikey:
+            print(f"YubiKey       : {found_yubikey}")
         try:
-            # Determine if result used YubiKey
-            used_yubikey = found_keyfile and "YubiKey" in found_keyfile
-            
-            if used_yubikey:
+            if found_yubikey:
                 # For YubiKey, use keepassxc-cli to extract entries
                 kp = None  # Can't use PyKeePass with YubiKey
             else:
                 kp = PyKeePass(db_file, password=found_password, keyfile=found_keyfile)
             if output_entries or output_file:
-                if used_yubikey:
+                if found_yubikey:
                     print("\nWarning: Entry extraction with YubiKey requires manual access.")
-                    yubikey_spec_found = found_keyfile.replace("YubiKey ", "")
-                    print(f"Use: keepassxc-cli show --yubikey {yubikey_spec_found} {db_file} <entry-path>")
+                    print(f"Use: keepassxc-cli show --yubikey {found_yubikey}", end="")
+                    if found_keyfile:
+                        print(f" --key-file {found_keyfile}", end="")
+                    print(f" {db_file} <entry-path>")
                 elif kp:
                     output_lines = []
                     for entry in kp.entries:
